@@ -21,11 +21,13 @@ It was made specifically to fit the needs of my friend Mike. As such the script 
   * Uses an args-file
   * Runs in batches of configurable size
   * Catches errors
-* Execute [ImageMagick](http://www.imagemagick.org/) (or [GraphicsMagick](http://www.graphicsmagick.org/))
+* Execute [ImageMagick](http://www.imagemagick.org/) or [GraphicsMagick](http://www.graphicsmagick.org/)
   * Convert images to JPEG
   * Scales images to max width/height
+  * Extract image properties such as color space, icc color profile, bit depth, estimated quality
 * Read image properties
-  * type, Width, height, size, number of frames
+  * Use Windows Image Acquisition (WIA) to read filetype, Width, height, size, number of frames
+  * Read file bytes to detect JPG mode (baseline/progressive/arithmetic/lossless/hierarchical)
 * Move files to destination folders based on their properties
   * Ensures output folders exist
   * Overwrite or rename existing files

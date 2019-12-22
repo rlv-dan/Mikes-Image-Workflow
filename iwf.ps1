@@ -6,10 +6,8 @@ Getting started:
         Extact to same folder as this script (or chage configuration to point correctly)
         Rename to "ExifTool.exe"
 
-    2. Download ImageMagick "Portable Win64 static" from http://www.imagemagick.org/script/binary-releases.php
+    2. Download the "Portable Win64 static" from http://www.imagemagick.org/script/binary-releases.php
         Extract to a subfolder called imagemagick located in the same folder as this script (or chage configuration to point correctly)
-
-        (If you want to use other ImageMagick versions, or GraphicsMagick, you need to change some configurations below)
 
     3. Download TrID from http://mark0.net/soft-trid-e.html
         Go to bottom of page and download Win32 zip + TrIDDefs
@@ -25,23 +23,40 @@ Getting started:
 
 ### configuration #############################################################
 
-$outRootFolder = "t:\iw\out"                 # the base output folder
-$outputFolders = @{
-    "archive"  = "$outRootFolder\out_archive";  # if $archiveSourceFiles is true, all processed files will be moved here after the workflow has run.
-    "error"    = "$outRootFolder\out_error";
-    "wrongext" = "$outRootFolder\out_wrong_ext";
-    "gif"      = "$outRootFolder\out_gif_static";
-    "gifanim"  = "$outRootFolder\out_gif_anim";
-    "jpg"      = "$outRootFolder\out_jpg";
-    "light"    = "$outRootFolder\out_light";    # less than $smallWeight
-    "logs"     = "$outRootFolder\out_logs";     # one csv file is produced and put here
-    "nonimg"   = "$outRootFolder\out_non_img";  # if $moveNonImageFiles is true, this is where any unhandled file type is moved if passed to the script.    
-    "heavy"    = "$outRootFolder\out_heavy";    # more than $maxWeight
-    "small"    = "$outRootFolder\out_small";    # less than $smallWidth or $smallHeight
+$outRootFolder    = "t:\iwf\"                 # the base output folder
+$outputFolders    = @{
+    "archive"     = "$outRootFolder\out_archive";  # if $archiveSourceFiles is true, all processed files will be moved here after the workflow has run.
+    "error"       = "$outRootFolder\out_error";
+    "wrongext"    = "$outRootFolder\out_wrong_ext";
+    "jpg"         = "$outRootFolder\out_jpg";
+    "gif"         = "$outRootFolder\out_gif_static";
+    "gifanim"     = "$outRootFolder\out_gif_active";
+    "logs"        = "$outRootFolder\out_logs";     # one csv file is produced and put here
+    "nonimg"      = "$outRootFolder\out_non_img";  # if $moveNonImageFiles is true, this is where any unhandled file type is moved if passed to the script.
+
+    # all below can be inactivated by setting to ""
+    "light"       = "$outRootFolder\out_light";    # less than $smallWeight
+    "heavy"       = "$outRootFolder\out_heavy";    # more than $maxWeight
+    "small"       = "$outRootFolder\out_small";    # less than $smallWidth or $smallHeight
+    "not_srgb"    = "$outRootFolder\oddset_not_srgb";
+    "interlace"   = "$outRootFolder\oddset_progressive";
+    "not_8bit"    = "$outRootFolder\oddset_not_8bit";
+    "low_quality" = "$outRootFolder\oddset_low_quality"; # under $lowQualityThreshold below
+    "icc_not_rgb" = "$outRootFolder\oddset_icc_not_rgb"; # see config below
+    "icc_not_srgb"= "$outRootFolder\oddset_icc_not_srgb";
+    "special_jpg" = "$outRootFolder\oddset_special_jpg"; # Detected: Progressive, Arithmetic, Lossless, Hierarchical
 }
 
 $validExtensions = 		          ".jpg", ".jpeg", ".jpe", ".png", ".tif", ".tiff", ".gif", ".bmp",
-				                  ".jp2", ".jpf", ".jpx", ".j2c", ".j2k", ".jpc", ".webp"
+				                  ".jp2", ".jpf", ".jpx", ".j2c", ".j2k", ".jpc", ".webp", ".psd"
+
+$nonRgbColorProfiles =            "Europe ISO Coated FOGRA27", "Euroscale Coated v2", "Euroscale Uncoated v2", 
+                                  "Japan Color 2001 Coated", "Japan Color 2001 Uncoated", "Japan Color 2002 Newspaper", 
+                                  "Japan Web Coated(Ad)", "U.S. Sheetfed Coated v2", "U.S. Sheetfed Uncoated v2", 
+                                  "U.S. Web Coated (SWOP) v2", "U.S. Web Uncoated v2", "Agfa : Swop Standard", 
+                                  "sGray", "Dot Gain 10%", "Dot Gain 15%", "Dot Gain 20%", "Dot Gain 25%", 
+                                  "Dot Gain 30%", "Gray Gamma 1.8", "Gray Gamma 2.2"
+
 $moveNonImageFiles = $true        # Files that do not match any of the valid image extensions 
 				                  #   will be moved to folder specified in $outputFolders.nonimg
 $archiveSourceFiles = $true       # Source files will be moved to _archive folder. Exception: Files with errors
@@ -64,7 +79,9 @@ $validateExtOnErrors = $true      # When enabled, TrID is used on all files flag
                                   #   will be moved the wrongext output folder.
 $overwriteOriginal = $false       # Overwrite original file instead of putting in output folders. 
 $exifToolBatchSize = 500          # How many files to send to ExifTool in each batch (0 for all).
-$printIndividualErrors = $false   # If errors occur when running external program, should each error be printed in red afterwards?
+$printIndividualErrors = $false   # If errors occur when running external program, should each error be printed in 
+                                  # red afterwards?
+$readAdvancedJpgProps = $true     # Tries to identify "odd" JPG properties
 
 
 # Rules when processing images
@@ -77,19 +94,24 @@ $smallWeight = 32KB    # logic of "small" items is < ("less than")
 $smallWidth = 401
 $smallHeight = 401
 
+$lowQualityThreshold = 22   # quality is estimated by ImageMagick's identify utility
+$highQualityThreshold = 91  # Will be resaved if above this. (quality is estimated by ImageMagick's identify utility)
+
 # Rules for cleaning up filenames
 
 $maxFilenameLength = 32        # Does not include extension (.ext)
 $allowedChars = 'a-zA-Z0-9_'
 
-$renames = @{                                # RegEx rules for renaming / cleaning up output filenames
+$renames = [ordered]@{                       # RegEx rules for renaming / cleaning up output filenames
     'find something' = 'replace with this';  # Add new rules by simply adding a line like this.
     'removethis' = '';                       # Leave the find string empty to remove.
-    '-' = '_';                               # Replace dash with underscore
+    '[-]' = '_';                             # Replace dash with underscore
+    '[ ]' = '_';                             # Replace space with underscore
     '0+' = '0';                              # Shrink multiple zero to one
-    '^_' = '';                               # Remove underscore at beginning
-    '_{2,}' = '_';                           # Replace two or more underscores with single one
     "[^$allowedChars]" = '';                 # Remove unwanted characters (defined above)
+    '_{2,}' = '_';                           # Replace two or more underscores with single one
+    '^_' = '';                               # Remove underscore at beginning
+    '_$' = '';                               # Remove underscore at end
     "(^.{$maxFilenameLength}).*" = '$1';     # Crop to x number of characters. Best to keep this last.
 }
 
@@ -103,40 +125,43 @@ $exeTimeout = (5 * 60 * 1000) # In milliseconds. To prevent script from hanging,
 $printExecutingCommands = $false
 
 # ImageMagick configuration:
+# Info: http://www.imagemagick.org/Usage/formats/#jpg_write
+#   Colorspace: ImageMagick assumes the sRGB colorspace if the image format does not indicate otherwise. 
+#   Calculation of optimal Huffman coding tables is on by default
 # "-quality 90%" approximately matches PS9
+#   If not set: The default is to use the estimated quality of your input image if it can be determined, otherwise 92
 # "-sampling-factor" can be: "1x1", "1x2" or "2x2" where 1x1 best quality. (IM default chroma sub-sampling is 2x2 and corresponds to 4:2:0)
+#   When the quality is greater than 90, then the chroma channels are not downsampled
 # Adding "-define jpeg:extent=400kb" will force ImageMagick to produce jpeg of this size. Very slow!
-# Advanced configurations:
+# Advanced configurations we would consider:
 #   Add an unsharp
 #   Change the resampling filter used
 #   (very advanced) Use a custom custom quantization table by using "-define jpeg:q-table={path}"
-$resize = ('-resize "' + $maxWidth + 'x' + $maxHeight + '>"') #this will resize to max W/H oly if image is larger. ref: http://www.imagemagick.org/Usage/resize/#shrink
-$imageMagickConvertArgs = "$resize -quality 90% -sampling-factor 1x1"      # when converting "other" formats to jpg
-$imageMagickScaleDownArgs = "$resize -quality 90% -sampling-factor 1x1"    # when scaling down images larger that maxWidth/maxHeight
+$im_resize = ('-resize "' + $maxWidth + 'x' + $maxHeight + '>"') #this will resize to max W/H oly if image is larger. ref: http://www.imagemagick.org/Usage/resize/#shrink
+$imageMagickConvertArgs = "$im_resize -colorspace RGB -quality 83% -sampling-factor 1x1"      # when converting "other" formats to jpg
+$imageMagickScaleDownArgs = "$im_resize -colorspace RGB -quality 83% -sampling-factor 1x1"    # when scaling down images larger that maxWidth/maxHeight
 
 $imageMagickConvertExe = ($scriptPath + "\imagemagick\convert.exe")
 $imageMagickMogrifyExe = ($scriptPath + "\imagemagick\mogrify.exe")
+$imageMagickIdentifyExe = ($scriptPath + "\imagemagick\identify.exe")
 $imageMagickConvertArgsPrefix = ""
 $imageMagickScaleDownArgsPrefix = ""
 
-<# Default ImageMagick configuration ("Portable Win64 static") #>
-<#
+<# Original
 $imageMagickConvertExe = ($scriptPath + "\imagemagick\convert.exe")
 $imageMagickMogrifyExe = ($scriptPath + "\imagemagick\mogrify.exe")
 $imageMagickConvertArgsPrefix = ""
 $imageMagickScaleDownArgsPrefix = ""
 #>
 
-<# Configuration for ImageMagick Q8 #>
-<#
+<# Q8
 $imageMagickConvertExe = ($scriptPath + "\ImageMagick-7.0.2-Q8\magick.exe")
 $imageMagickMogrifyExe = ($scriptPath + "\ImageMagick-7.0.2-Q8\magick.exe ")
 $imageMagickConvertArgsPrefix = "convert "
 $imageMagickScaleDownArgsPrefix = "mogrify "
 #>
 
-<# Configuration for GraphicsMagick #>
-<#
+<# GraphicsMagick
 $imageMagickConvertExe = ($scriptPath + "\GraphicsMagick-1.3.24-Q8\gm.exe")
 $imageMagickMogrifyExe = ($scriptPath + "\GraphicsMagick-1.3.24-Q8\gm.exe")
 $imageMagickConvertArgsPrefix = "convert "
@@ -145,13 +170,30 @@ $imageMagickScaleDownArgsPrefix = "mogrify "
 
 
 $exifToolExe = ($scriptPath + "\exiftool.exe")
-#$exifToolArgFile = ([System.IO.Path]::GetTempPath() + "\iwf-exiftool-args.txt")
 $exifToolArgFile = [System.IO.Path]::GetTempFileName()
 $exifToolCmd = '-charset', 'FILENAME=UTF8', '-all=', '-CommonIFD0=', '-m', '@input', '-P', '-o', '@output', '-execute'
 
 $tridExe = ($scriptPath + '\trid.exe')
 
 
+### Verify dependencies exist#################################################
+
+if( -not (Test-Path -LiteralPath $imageMagickConvertExe)) {
+    Write-Host "ImageMagick Convert exe not found: $imageMagickConvertExe" -ForegroundColor White -BackgroundColor Red
+    Exit
+}
+if( -not (Test-Path -LiteralPath $imageMagickMogrifyExe)) {
+    Write-Host "ImageMagick Mogrify exe not found: $imageMagickMogrifyExe" -ForegroundColor White -BackgroundColor Red
+    Exit
+}
+if( -not (Test-Path -LiteralPath $exifToolExe)) {
+    Write-Host "Exif Tool exe not found: $exifToolExe" -ForegroundColor White -BackgroundColor Red
+    Exit
+}
+if( -not (Test-Path -LiteralPath $tridExe)) {
+    Write-Host "TrID exe not found: $tridExe" -ForegroundColor White -BackgroundColor Red
+    Exit
+}
 
 ### Workflow Cmdlet ###########################################################
 
@@ -165,6 +207,7 @@ $timers = @{
     "exiftool" = New-Object "System.Diagnostics.Stopwatch";
     "fileio" = New-Object "System.Diagnostics.Stopwatch";
     "checkext" = New-Object "System.Diagnostics.Stopwatch";
+    "advprops" = New-Object "System.Diagnostics.Stopwatch";
 }
 
 function Start-Workflow
@@ -250,14 +293,19 @@ function Start-Workflow
             Write-Host "Processing images..." -ForegroundColor Yellow
 
             GetFirstTimeImageProps $files
+            IdentifyOddsetJpegProperties $files
 
             ConvertToJpeg $files
 
             GetImageProps $files
+            #IdentifyOddsetJpegProperties $files
+
+            SetDestinations $files # Run here because PostProcessing needs to know if destination is not standard
 
             PostProcessing $files
 
             GetImageProps $files
+            #IdentifyOddsetJpegProperties $files
 
             RunExifTool $files
 
@@ -265,6 +313,7 @@ function Start-Workflow
 
             SetDestinations $files
             SendToDestination $files
+
         }
 
 
@@ -310,6 +359,7 @@ function Start-Workflow
         write-Host "Running Time:" -ForegroundColor Yellow
         write-Host ("`tTotal: " + (FormatStopwatchTime($timers.main)) )
         write-Host ("`tExifTool: " + (FormatStopwatchTime($timers.exiftool)) )
+        write-Host ("`tImageMagick identify advanced jpg props: " + (FormatStopwatchTime($timers.advprops)) )
         write-Host ("`tImageMagick convert to jpg: " + (FormatStopwatchTime($timers.imconvert)) )
         write-Host ("`tImageMagick post processing: " + (FormatStopwatchTime($timers.improcess)) )
         write-Host ("`tReading image properties: " + (FormatStopwatchTime($timers.props)) )
@@ -336,6 +386,14 @@ function NewWorkflowItem($source)
             SourceHeight = 0;
             SourceFileSize = 0;
             SourceFrameCount = 1;
+
+            SourceJpegColorSpace = "N/A";
+            SourceJpegMode = "";
+            SourceJpegColorBitDepth = "N/A";
+            SourceJpegQuality = "N/A";
+            SourceJpegIsInterlace = "None"; # None is what ImageMagick reports
+            SourceIccProfile = "N/A";
+
             DestPath = $outputFolders.jpg;
             DestFilename = [System.IO.Path]::GetFileNameWithoutExtension($source);
             DestExt = [System.IO.Path]::GetExtension($source).ToLower();
@@ -347,6 +405,7 @@ function NewWorkflowItem($source)
             WorkFile = $source;
             OldWorkFile = $source; # used for error handling
             UpdateProps = $false;
+            UpdateAdvancedJpgProps = $true;
         }
     $obj | Add-Member -NotePropertyMembers $props -TypeName WorkFlowItem
 
@@ -570,7 +629,7 @@ function GetImageProps($files)
 {
     $timers.props.Start()
 
-    Write-Host "`Updating image properties..."
+    Write-Host "`tUpdating image properties..."
 
     $WiaImageFile = New-Object -ComObject Wia.ImageFile
     $errorCount = 0
@@ -756,7 +815,8 @@ function RunExifTool($files)
     for($i=0; $i -lt $files.Count; $i++)
     {
         $img = $files[$i]
-        if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        #if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        if(!$img.Error)
         {
             # take current work filename as input
             $in = $img.WorkFile
@@ -866,6 +926,10 @@ function ConvertToJpeg($files)
         {
             $convert += $f
         }
+        elseif($f.SourceJpegQuality -gt $highQualityThreshold)
+        {
+            $convert += $f
+        }
     }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -874,7 +938,8 @@ function ConvertToJpeg($files)
     {
 
         $img = $convert[$i]
-        if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        #if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        if(!$img.Error)
         {
             if ($sw.Elapsed.TotalMilliseconds -ge 500)
             {
@@ -889,6 +954,7 @@ function ConvertToJpeg($files)
             $in = $img.WorkFile
             $img.OldWorkFile = $img.WorkFile
             $img.UpdateProps = $true
+            $img.UpdateAdvancedJpgProps = $true;
 
             # generate a new work filename as output
             $img.DestExt = ".jpg"
@@ -896,6 +962,8 @@ function ConvertToJpeg($files)
             $out = $img.WorkFile
 
             $origDate = Get-ItemProperty -LiteralPath $in | select LastWriteTime
+
+            $in += "[0]" # tell ImageMagick to process first image only (if there are multiple frames/layers)
 
             $imageMagickResult = ExecuteCommand -commandPath $imageMagickConvertExe -commandArguments ($imageMagickConvertArgsPrefix + '"' + $in + '" ' + $imageMagickConvertArgs + ' "' + $out + '"')
             if($imageMagickResult.ExitCode -eq 0)
@@ -934,10 +1002,10 @@ function PostProcessing($files)
 {
     $timers.improcess.Start()
 
-    Write-Host ("`tProcessing images...")
+    Write-Host ("`tProcessing Large/Heavy images (Shrink/Re-Save)...")
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    Write-Progress -Activity "Processing images..." -Status "Preparing" -PercentComplete 0
+    Write-Progress -Activity "Processing Large/Heavy images (Shrink/Re-Save)..." -Status "Preparing" -PercentComplete 0
 
     # pre-calculate how many files needed to be processed
     $processed = 0
@@ -945,7 +1013,8 @@ function PostProcessing($files)
     for($i=0; $i -lt $files.Count; $i++)
     {
         $img = $files[$i]
-        if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        #if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        if((!$img.Error) -and ($img.DestPath -eq $outputFolders.jpg))
         {
             if($img.DestWidth -gt $maxWidth -or $img.DestHeight -gt $maxHeight)
             {
@@ -958,16 +1027,19 @@ function PostProcessing($files)
         }
     }
 
+    Write-Progress -Activity "Processing Large/Heavy images (Shrink/Re-Save)..." -Status "0% done" -PercentComplete 0
+
     for($i=0; $i -lt $files.Count; $i++)
     {
         $img = $files[$i]
-        if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        #if(!$img.Error -and ($img.DestExt -ne ".gif"))
+        if((!$img.Error) -and ($img.DestPath -eq $outputFolders.jpg))
         {
             if ($sw.Elapsed.TotalMilliseconds -ge 500)
             {
                 $percentDone = [System.Math]::Round((($processed / $count) * 100), 0);
                 #Write-Progress -Activity "Processing images..." -Status "$percentDone% done" -PercentComplete $percentDone -CurrentOperation $img.Source
-                Write-Progress -Activity "Processing images..." -Status "$percentDone% done" -PercentComplete $percentDone -CurrentOperation $img.Source
+                Write-Progress -Activity "Processing Large/Heavy images (Shrink/Re-Save)..." -Status "$percentDone% done" -PercentComplete $percentDone -CurrentOperation $img.Source
                 $sw.Reset(); $sw.Start()
             }
 
@@ -996,6 +1068,7 @@ function PostProcessing($files)
                 $out = $img.WorkFile
 
                 $img.UpdateProps = $true
+                $img.UpdateAdvancedJpgProps = $true;
 
                 #$imageMagickResult = ExecuteCommand -commandPath $imageMagickMogrifyExe -commandArguments ($args + ' "' + $out + '"')
                 $imageMagickResult = ExecuteCommand -commandPath $imageMagickConvertExe -commandArguments ($imageMagickConvertArgsPrefix + '"' + $in + '" ' + $imageMagickConvertArgs + ' "' + $out + '"')
@@ -1036,7 +1109,7 @@ function PostProcessing($files)
     }
 
 
-    Write-Progress -Activity "Processing images..." -PercentComplete 100 -Completed
+    Write-Progress -Activity "Processing Large/Heavy images (Shrink/Re-Save)..." -PercentComplete 100 -Completed
     Write-Host ("`t`t" + $count + " files processed...")
 
     $timers.improcess.Stop()
@@ -1069,7 +1142,8 @@ function SetDestinations($files)
                 $img.DestFilename = [System.IO.Path]::GetFilenameWithoutExtension($img.Source)
             } else {
                 # set destination path
-                if($img.DestExt -eq ".gif")
+                #if($img.DestExt -eq ".gif")
+                if([System.IO.Path]::GetExtension($img.source).ToLower() -eq ".gif")
                 {
                     if($img.SourceFrameCount -gt 1) {
                         $img.DestPath = $outputFolders.gifanim
@@ -1079,17 +1153,54 @@ function SetDestinations($files)
                 }
                 else
                 {
-                    if($img.DestFileSize -lt $smallWeight)
+                    # Order here is important for business logic
+
+                    if(($outputFolders.not_srgb -ne "") -and ($img.SourceJpegColorSpace -ne "N/A") -and ($img.SourceJpegColorSpace -ne "sRGB"))
+                    {
+                        Write-Verbose ("JPEG color space is not sRGB: " + $img.Source)
+                        $img.DestPath = $outputFolders.not_srgb
+                    }
+                    elseif(($outputFolders.icc_not_rgb -ne "") -and ($img.SourceIccProfile -ne "N/A") -and ($nonRgbColorProfiles -contains $img.SourceIccProfile))
+                    {
+                        Write-Verbose ("ICC Color Profile is not RGB: " + $img.Source)
+                        $img.DestPath = $outputFolders.icc_not_rgb
+                    }
+                    elseif(($outputFolders.icc_not_srgb -ne "") -and ($img.SourceIccProfile -ne "N/A") -and ($img.SourceIccProfile -notmatch "sRGB"))
+                    {
+                        Write-Verbose ("ICC Color Profile is not sRGB: " + $img.Source)
+                        $img.DestPath = $outputFolders.icc_not_srgb
+                    }
+                    elseif(($outputFolders.special_jpg -ne "") -and ($img.SourceJpegMode -ne "") -and ($img.SourceJpegMode -ne "Baseline"))
+                    {
+                        Write-Verbose ("Special JPPEG Mode: " + $img.SourceJpegMode)
+                        $img.DestPath = $outputFolders.special_jpg
+                    }
+                    elseif(($outputFolders.low_quality -ne "") -and ($img.SourceJpegQuality -ne "N/A") -and ($img.SourceJpegQuality -lt $lowQualityThreshold))
+                    {
+                        Write-Verbose ("JPEG is low quality: " + $img.Source)
+                        $img.DestPath = $outputFolders.low_quality
+                    }
+                    elseif(($outputFolders.not_8bit -ne "") -and ($img.SourceJpegColorBitDepth -ne "N/A") -and ($img.SourceJpegColorBitDepth -ne "8-bit"))
+                    {
+                        Write-Verbose ("JPEG color bit depth not 8-bit: " + $img.Source)
+                        $img.DestPath = $outputFolders.not_8bit
+                    }
+                    elseif(($outputFolders.interlace -ne "") -and $img.SourceJpegIsInterlace -eq "JPEG")
+                    {
+                        Write-Verbose ("JPEG is Interlaced: " + $img.Source)
+                        $img.DestPath = $outputFolders.interlace
+                    }
+                    elseif(($outputFolders.light -ne "") -and ($img.DestFileSize -lt $smallWeight))
                     {
                         Write-Verbose ("Light image: " + $img.Source)
                         $img.DestPath = $outputFolders.light
                     }
-                    elseif($img.DestWidth -lt $smallWidth -or $img.DestHeight -lt $smallHeight)
+                    elseif(($outputFolders.small -ne "") -and ($img.DestWidth -lt $smallWidth -or $img.DestHeight -lt $smallHeight))
                     {
                         Write-Verbose ("Small image: " + $img.Source)
                         $img.DestPath = $outputFolders.small
                     }
-                    elseif($img.DestFileSize -gt $maxWeight)
+                    elseif(($outputFolders.heavy -ne "") -and ($img.DestFileSize -gt $maxWeight))
                     {
                         Write-Verbose ("Heavy image: " + $img.Source)
                         $img.DestPath = $outputFolders.heavy
@@ -1098,6 +1209,7 @@ function SetDestinations($files)
                     {
                         $img.DestPath = $outputFolders.jpg
                     }
+                    
 
                     # always use .jpg as extension
                     $img.DestExt = ".jpg"
@@ -1346,11 +1458,166 @@ function FairlySmartCharReplace {
     [Char[]] $NonUnicodeChars = New-Object -TypeName “Char[]” -ArgumentList $($NonUnicodeEncoding.GetCharCount($NonUnicodeBytes, 0, $NonUnicodeBytes.Length))
     [void] $NonUnicodeEncoding.GetChars($NonUnicodeBytes, 0, $NonUnicodeBytes.Length, $NonUnicodeChars, 0);
     [String] $NonUnicodeString = New-Object String(,$NonUnicodeChars)
-    
+
     ($NonUnicodeString -replace "[^a-zA-Z0-9_().\- ]","#")
-    
+
     #$NonUnicodeString
 }
+
+###############################################################################
+
+
+function IdentifyOddsetJpegProperties($files)
+{
+    if($readAdvancedJpgProps -eq $false) {
+        return;
+    }
+
+    $timers.advprops.Start()
+
+    Write-Host ("`tReading advanced jpg properties...")
+
+    $count = 0
+    $errorCount = 0
+
+    $convert = @()
+    foreach($f in $files)
+    {
+        $ext = [System.IO.Path]::GetExtension($f.WorkFile).ToLower();
+        $jpegExtensions = ".jpg", ".jpeg", ".jpe"
+        if($ext -in $jpegExtensions)
+        {
+            $convert += $f
+        }
+    }
+
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Progress -Activity "Reading advanced jpg properties..." -Status "0% done" -PercentComplete 0
+    for($i=0; $i -lt $convert.Count; $i++)
+    {
+
+        $img = $convert[$i]
+        if(!$img.Error -and $img.UpdateAdvancedJpgProps)
+        {
+            if ($sw.Elapsed.TotalMilliseconds -ge 500)
+            {
+                $percentDone = [System.Math]::Round((($i / $convert.Count) * 100), 0);
+                Write-Progress -Activity "Reading advanced jpg properties..." -Status "$percentDone% done" -PercentComplete $percentDone -CurrentOperation $img.Source
+                $sw.Reset(); $sw.Start()
+            }
+
+
+            Write-Verbose ("Reading " + $img.WorkFile)
+            $in = $img.WorkFile
+            $img.UpdateAdvancedJpgProps = $false;
+
+            # Use ImageMagick Identify
+            $imageMagickResult = ExecuteCommand -commandPath $imageMagickIdentifyExe -commandArguments ('-verbose "' + $in + '"')
+            if($imageMagickResult.ExitCode -eq 0)
+            {
+                $count++
+                $output = $imageMagickResult.stdout -split [System.Environment]::NewLine
+
+                for($n = 0 ; $n -lt $output.Length; $n++)
+                {
+                    $line = $output[$n] -split ": "
+                    $prop = $line[0].trim();
+
+                    if($prop -eq "Colorspace") # ex: Colorspace: sRGB
+                    {
+                        $img.SourceJpegColorSpace = $line[1]
+                    }
+                    elseif($prop -eq "Depth") # ex: Depth: 8-bit
+                    {
+                        $img.SourceJpegColorBitDepth = $line[1]
+                    }
+                    elseif($prop -eq "Quality") # ex: Quality: 92
+                    {
+                        $img.SourceJpegQuality = $line[1].trim()
+                    }
+                    elseif($prop -eq "Interlace") # ex: Interlace: JPEG
+                    {
+                        $img.SourceJpegIsInterlace = $line[1].trim()
+                    }
+                    elseif($prop -eq "icc:model") # ex: icc:model: ColorMatch RGB
+                    {
+                        $img.SourceIccProfile = $line[1].trim()
+                    }
+                }
+
+            }
+            else
+            {
+                $errorCount++
+                $errors = ($imageMagickResult.stderr -split "`n")
+                $e = (($errors[0] -replace "identify.exe: ", "") -replace "`r","")
+                $img.Error = $true
+                $img.ErrorMsg = $e
+                if($printIndividualErrors) {
+                    Write-Host ("`tImageMagick error: " + $e) -BackgroundColor Red
+                }
+                Write-Verbose ("ImageMagick stderr:" + $imageMagickResult.stderr)
+            }
+
+
+            #file open for the analysis by per byte
+            $fs = [IO.File]::OpenRead($in)
+            for($j = 0 ; $j -lt $fs.Length; $j++)
+            {
+                $fs.Position = $j
+                $byte = $fs.ReadByte()
+                if($byte -eq 255)      #if it is marker? 255 means 0xff, Oxff means marker
+                {
+                    $j++              #forward byte
+                    $byte = $fs.ReadByte()
+                    $byte = [Convert]::ToString($byte, 16)  #transformation to string
+
+                    if($byte -eq "da") #da means SOS (Start of Scan)
+                    {
+                        break
+                    }
+                    if($byte -eq "c0")  #c0 means Baseline jpeg
+                    {
+                        $img.SourceJpegMode = "Baseline"
+                        break;
+                    }
+                    if($byte -eq "c2" -or $byte -eq "c6" -or $byte -eq "ca" -or $byte -eq "ce")
+                    {
+                        $img.SourceJpegMode = "Progressive"
+                        break;
+                    }  
+                    if($byte -eq "c9" -or $byte -eq "ca" -or $byte -eq "cb" -or $byte -eq "cd" -or $byte -eq "ce" -or $byte -eq "cf")
+                    {
+                        $img.SourceJpegMode = "Arithmetic"
+                        break;
+                    }
+                    if($byte -eq "c3" -or $byte -eq "c7" -or $byte -eq "cb" -or $byte -eq "cf")
+                    {
+                        $img.SourceJpegMode = "Lossless"
+                        break;
+                    }  
+                    if($byte -eq "c5" -or $byte -eq "c6" -or $byte -eq "c7" -or $byte -eq "cd" -or $byte -eq "ce" -or $byte -eq "cf")
+                    {
+                        $img.SourceJpegMode = "Hierarchical"
+                        break;
+                    }
+                }
+            }
+            $fs.Close()
+
+        }
+    }
+
+    Write-Progress -Activity "Reading advanced jpg properties..." -PercentComplete 100 -Completed
+    Write-Host ("`t`t" + $count + " image files read")
+    if($errorCount -gt 0) {
+        Write-Host ("`t`t" + $errorCount + " image files returned error") -BackgroundColor Red
+    }
+
+    $timers.advprops.Stop()
+}
+
 
 ###############################################################################
 
@@ -1491,12 +1758,10 @@ function Start-WorkflowGui()
 
 cls
 
+
 ### Place your command line here (see examples below how to write) ############
 
 
-#dir -Path 't:\iw\in\' -Recurse -File -Filter *.* | Start-Workflow | Out-GridView
-
-#Start-WorkflowGui
 
 
 
@@ -1516,8 +1781,6 @@ How to run the script:
     The easiest way to start to the workflow is to write a line where you pipe files to 
     the workflow and place this command at the bottom of the script (ie here), and then 
     simply run the file (F5 in PowerShell ISE).
-
-    There is also a simple GUI that you can use ("Start-WorkflowGui")
 
 Tutorial with Examples:
 
@@ -1554,7 +1817,5 @@ Tutorial with Examples:
 
         dir -Path 'T:\Samples\' -Recurse -File -Filter *.* | Start-Workflow -Verbose | Out-GridView
 
-    Start the GUI:
-
-        Start-WorkflowGui
 #>
+
